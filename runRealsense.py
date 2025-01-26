@@ -106,3 +106,4 @@ finally:
     # 釋放資源
     pipeline.stop()
     cv2.destroyAllWindows()
+
