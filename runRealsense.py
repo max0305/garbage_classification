@@ -82,7 +82,7 @@ try:
             X, Y, Z = point_3d  # 單位：公尺
 
             # 3. 組合顯示的字串，可依需求調整小數位數
-            text_3d = f"X={X:.2f}, Y={Y:.2f}, Z={Z:.2f} m"
+            text_3d = f"X={X:.3f}, Y={Y:.3f}, Z={Z:.3f} m"
 
             # 4. 繪製文字到影像上，位置可自行微調
             cv2.putText(
