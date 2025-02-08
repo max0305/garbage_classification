@@ -23,5 +23,3 @@ while True:
     # 每一次迭代步進模擬
     p.stepSimulation()
     time.sleep(1./240.)  # 控制模擬速度，PyBullet 預設約 240Hz
-
-#test

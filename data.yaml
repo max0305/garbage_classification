@@ -4,5 +4,5 @@ val: ../valid/images
 #test: ../test/images
 
 nc: 4
-names: ['寶特瓶', '玻璃瓶', '衛生紙', '鋁箔包']
+names: ['寶特瓶', '鋁罐', '衛生紙', '鋁箔包']
     

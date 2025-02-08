@@ -1,6 +1,6 @@
 import os
 
-def update_yolo_labels(folder_path, old_index=0, new_index=3):
+def update_yolo_labels(folder_path, old_index=0, new_index=1):
     """
     更新 YOLO 格式标签文件，将所有标签的索引从 old_index 改为 new_index。
     
@@ -36,5 +36,5 @@ def update_yolo_labels(folder_path, old_index=0, new_index=3):
             print(f"已更新文件: {filename}")
 
 # 使用示例
-folder_path = r"C:\Users\a0938\Downloads\carton\obj_train_data"  # 替换为实际的文件夹路径
+folder_path = r"C:\garbage_classification\valid\labels\can"  # 替换为实际的文件夹路径
 update_yolo_labels(folder_path)

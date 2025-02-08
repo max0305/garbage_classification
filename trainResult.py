@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # 讀取訓練結果數據
-results_path = 'runs/detect/train5/results.csv'  # 修改為你的路徑
+results_path = 'runs/detect/train6/results.csv'  # 修改為你的路徑
 data = pd.read_csv(results_path)
 
 # 繪製損失曲線
