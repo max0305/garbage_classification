@@ -4,7 +4,7 @@ import numpy as np
 from ultralytics import YOLO
 
 # 加載訓練好的 YOLO 模型
-model = YOLO("runs/detect/train3/weights/best.pt")  # 使用訓練後的權重
+model = YOLO("runs/detect/train7/weights/best.pt")  # 使用訓練後的權重
 
 # 設置 RealSense 相機
 pipeline = rs.pipeline()
@@ -29,6 +29,7 @@ try:
 
         # depth_intrinsics 中就包含 fx, fy, ppx, ppy, distortion 等資訊 
         depth_intrinsics = depth_frame.profile.as_video_stream_profile().get_intrinsics()
+        print(depth_intrinsics)
 
         if not color_frame or not depth_frame:
             continue
@@ -70,7 +71,7 @@ try:
 
             # 以文字顯示 (距離取到小數點第二位)
             text = f"{distance:.2f} m"
-            # 決定文字要顯示的位置 (可自行微調)
+            # 決定文字要顯示的位置
             text_pos = (int(x1), int(y1) - 25)
 
             # 在畫面上繪製深度資訊
@@ -80,11 +81,12 @@ try:
             )
 
             X, Y, Z = point_3d  # 單位：公尺
+            Y = -Y
 
             # 3. 組合顯示的字串，可依需求調整小數位數
             text_3d = f"X={X:.2f}, Y={Y:.2f}, Z={Z:.2f} m"
 
-            # 4. 繪製文字到影像上，位置可自行微調
+            # 4. 繪製文字到影像上
             cv2.putText(
                 annotated_frame, 
                 text_3d, 

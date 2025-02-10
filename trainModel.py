@@ -7,7 +7,7 @@ model = YOLO("yolov10m.pt")
 if __name__ == '__main__':
     model.train(
         data = "data.yaml", 
-        epochs = 60, 
+        epochs = 100, 
         imgsz = 416, 
         augment = True
     )

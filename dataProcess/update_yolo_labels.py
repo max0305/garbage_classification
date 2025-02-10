@@ -36,5 +36,5 @@ def update_yolo_labels(folder_path, old_index=0, new_index=1):
             print(f"已更新文件: {filename}")
 
 # 使用示例
-folder_path = r"C:\garbage_classification\valid\labels\can"  # 替换为实际的文件夹路径
+folder_path = r"C:\Users\a0938\Desktop\training data\Can\valid\labels"  # 替换为实际的文件夹路径
 update_yolo_labels(folder_path)

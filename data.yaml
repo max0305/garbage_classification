@@ -1,8 +1,8 @@
 
-train: ../train/images
-val: ../valid/images
+train: C:/Users/a0938/Desktop/train
+val: C:/Users/a0938/Desktop/valid
 #test: ../test/images
 
 nc: 4
-names: ['寶特瓶', '鋁罐', '衛生紙', '鋁箔包']
+names: ['寶特瓶', '鋁罐', '衛生紙', '紙盒']
     
