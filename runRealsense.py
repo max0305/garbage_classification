@@ -17,7 +17,7 @@ config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)  # 深度流
 # 開始管道
 pipeline.start(config)
 
-# 創建對齊物件，對齊 **深度影像到 RGB 影像**
+# 創建對齊物件，對齊 **深度影像到 RGB 影像** add
 align = rs.align(rs.stream.color)
 
 # 創建 OpenCV 顯示窗口
@@ -28,9 +28,11 @@ try:
         # 獲取影像幀（彩色與深度）
         frames = pipeline.wait_for_frames()
 
-        # 使用 `rs.align` 讓深度影像與 RGB 影像對齊
+        # 使用 `rs.align` 讓深度影像與 RGB 影像對齊 add
         aligned_frames = align.process(frames)
 
+        #color_frame = frames.get_color_frame()
+        #depth_frame = frames.get_depth_frame()
         color_frame = aligned_frames.get_color_frame()
         depth_frame = aligned_frames.get_depth_frame()
 
