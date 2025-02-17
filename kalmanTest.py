@@ -226,9 +226,9 @@ def main():
                 if last_distance is None:
                     # 第一幀，直接用當前值初始化
                     last_distance = distance
-                elif distance <= 0 or abs(distance - last_distance) > 0.05:
+                elif distance <= 0 or (abs(distance - last_distance) > 0.05 and last_distance != 0):
                     distance = last_distance
-                    
+
                 last_distance = distance
 
                 
