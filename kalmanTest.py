@@ -138,6 +138,7 @@ def main():
     MAX_LOST = 10  # 容許多少幀未匹配就刪除追蹤器
     IOU_THRESHOLD = 0.3
 
+    last_distance = None  # frame未初始化
     try:
         while True:
             frames = pipeline.wait_for_frames()
@@ -154,7 +155,8 @@ def main():
             results = model(frame)
             det = results[0]
             boxes = det.boxes
-            annotated_frame = det.plot().copy()
+            #annotated_frame = det.plot().copy()
+            annotated_frame = frame.copy()
 
             # 1) 先對所有 tracker 做 predict
             for kf in trackers:
@@ -221,6 +223,14 @@ def main():
                 
                 # 2) 由 depth_frame 取得該中心像素的深度 (公尺)
                 distance = depth_frame.get_distance(center_x, center_y)
+                if last_distance is None:
+                    # 第一幀，直接用當前值初始化
+                    last_distance = distance
+                elif distance <= 0 or abs(distance - last_distance) > 0.05:
+                    distance = last_distance
+                    
+                last_distance = distance
+
                 
                 # 3) 使用 RealSense 的函式，將像素座標 + 深度轉成 3D 座標 (X, Y, Z)
                 point_3d = rs.rs2_deproject_pixel_to_point(
