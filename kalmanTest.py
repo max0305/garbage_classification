@@ -138,6 +138,17 @@ def main():
     MAX_LOST = 10  # 容許多少幀未匹配就刪除追蹤器
     IOU_THRESHOLD = 0.3
 
+    # 讀取座標轉換參數
+    fs = cv2.FileStorage("camera_calibration_result.yaml", cv2.FILE_STORAGE_READ)
+    # 讀取 handEyeRotation
+    handEyeRotation_node = fs.getNode("handEyeRotation")
+    handEyeRotation = handEyeRotation_node.mat()
+
+    # 讀取 handEyeTranslation
+    handEyeTranslation_node = fs.getNode("handEyeTranslation")
+    handEyeTranslation = handEyeTranslation_node.mat()
+
+
     last_distance = None  # frame未初始化
     try:
         while True:
@@ -240,9 +251,15 @@ def main():
                 )
                 # 輸出的座標依 RealSense 機型通常是 (X:右正, Y:下正, Z:前正)
                 # 若你需要 Y:上正，可自行調整 Y = -Y 等
+
+                point_3d_arr = np.array(point_3d).reshape(3, 1)  # shape = (3,1)
                 
-                X, Y, Z = point_3d
-                
+                # 座標轉換
+                point_arm = handEyeRotation @ point_3d_arr + handEyeTranslation
+
+                # 解包成純量
+                X, Y, Z = point_arm.ravel()  # ravel() 會把 (3,1) 攤平成 (3,)
+
                 # === (B) 顯示追蹤ID 與 3D座標文字 ===
                 # 這裡將 ID 顯示於框的上方
                 text_id = f"ID={idx}"
@@ -250,7 +267,7 @@ def main():
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
                 
                 # 顯示 3D 座標資訊，可放在框內或旁邊
-                text_3d = f"3D=({X:.2f}, {Y:.2f}, {Z:.2f})m"
+                text_3d = f"3D=({X:.3f}, {Y:.3f}, {Z:.3f})m"
                 cv2.putText(annotated_frame, text_3d, (x, y + 15),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
