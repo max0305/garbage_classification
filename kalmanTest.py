@@ -3,12 +3,22 @@ import pyrealsense2 as rs
 import numpy as np
 from ultralytics import YOLO
 
+CLASS_NAMES = [
+    "Plastic Bottle",     # 寶特瓶
+    "Can",     # 鋁罐
+    "tissue",    # 衛生紙
+    "carton"    # 紙盒
+]
+
 # ========== (A) 簡易的 2D Bounding Box 卡曼濾波器 ==========
 class KalmanFilterBBox:
-    def __init__(self, dt=1.0):
+    def __init__(self, dt=1.0, class_id=None):
         # 狀態向量: [x, y, w, h, vx, vy, vw, vh]
         self.dt = dt
         self.dim_state = 8
+
+        # 追蹤器對應的類別，直接存 class_id，或可存 class_name
+        self.class_id = class_id
 
         # 狀態轉移矩陣 F (8x8)
         self.F = np.array([
@@ -176,6 +186,8 @@ def main():
 
             # 2) 蒐集所有新的偵測框
             det_bboxes = []
+            class_ids = []
+
             for box in boxes:
                 x1, y1, x2, y2 = box.xyxy[0]
                 w = x2 - x1
@@ -186,9 +198,13 @@ def main():
                 # 也可改成中心 (cx, cy, w, h) 方式
                 det_bboxes.append((int(x), int(y), int(w), int(h)))
 
+                # 取得對應的 class id（即索引）
+                cls_id = int(box.cls[0])
+                class_ids.append(cls_id)
+
             # 3) 簡易的資料關聯: 對每個偵測框找最適合的 tracker
             matched_trackers = set()  # 用來標記哪些 tracker 已被匹配
-            for dbbox in det_bboxes:
+            for i, dbbox in enumerate(det_bboxes):
                 best_iou = 0
                 best_tracker = None
                 for kf_idx, kf in enumerate(trackers):
@@ -206,7 +222,8 @@ def main():
                     matched_trackers.add(best_tracker)
                 else:
                     # 找不到合適的 => 新增一個新的追蹤器
-                    new_kf = KalmanFilterBBox(dt)
+                    cls_id = class_ids[i]       # 對應到當前的物件類別
+                    new_kf = KalmanFilterBBox(dt,  class_id=cls_id)
                     new_kf.init_state(dbbox)
                     trackers.append(new_kf)
 
@@ -226,6 +243,17 @@ def main():
 
                 # 在 2D 畫面上繪製方框
                 cv2.rectangle(annotated_frame, (x, y), (x2, y2), (0, 255, 0), 2)
+
+                # 顯示該 tracker 之類別 (若為 None 表示沒偵測到就不顯示)
+                if kf.class_id is not None:
+                    class_name = CLASS_NAMES[kf.class_id]   # 從 CLASS_NAMES 表拿類別字串
+                    '''
+                    正常應從model.names中拿字串，但cv2無法顯示中文字，故另設計英文對照表 CLASS_NAMES 替代
+                    # class_name = model.names[kf.class_id]  # 從模型 names 表拿字串
+                    '''
+                    # 文字位置可自行調整
+                    cv2.putText(annotated_frame, class_name, (x + 2, y + 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
                 
                 # === (A) 加入 3D 座標計算 ===
                 # 1) 取出 Bounding Box 中心，通常 (cx, cy) = (x + w/2, y + h/2)
