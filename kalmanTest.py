@@ -2,6 +2,7 @@ import cv2
 import pyrealsense2 as rs
 import numpy as np
 from ultralytics import YOLO
+import time
 
 CLASS_NAMES = [
     "Plastic Bottle",     # 寶特瓶
@@ -9,6 +10,27 @@ CLASS_NAMES = [
     "tissue",    # 衛生紙
     "carton"    # 紙盒
 ]
+
+# ========== 初始化 YOLO 與 RealSense ==========
+def init_realsense_yolo():
+    pipeline = rs.pipeline()
+    config = rs.config()
+    config.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
+    config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+    pipeline.start(config)
+
+    align = rs.align(rs.stream.color)
+    model = YOLO("runs/detect/train7/weights/best.pt")  # 替換為自己的權重
+
+    return pipeline, align, model
+
+# ========== 讀取相機校正參數 ==========
+def load_camera_calibration():
+    fs = cv2.FileStorage("camera_calibration_result.yaml", cv2.FILE_STORAGE_READ)
+    handEyeRotation = fs.getNode("handEyeRotation").mat()
+    handEyeTranslation = fs.getNode("handEyeTranslation").mat()
+    return handEyeRotation, handEyeTranslation
+
 
 # ========== (A) 簡易的 2D Bounding Box 卡曼濾波器 ==========
 class KalmanFilterBBox:
@@ -55,6 +77,9 @@ class KalmanFilterBBox:
         # 追蹤品質計數器 (可用來判斷追蹤器是否可信，或失效等)
         self.lost_frames = 0
 
+        # ★★★ 保存最近 10 幀的 3D 座標紀錄 ★★★
+        self.history = []
+
     def init_state(self, bbox):
         # bbox: (x, y, w, h)
         self.X[0] = bbox[0]
@@ -96,6 +121,15 @@ class KalmanFilterBBox:
         w = max(w, 1)
         h = max(h, 1)
         return (int(x), int(y), int(w), int(h))
+    
+    def add_3d_history(self, xyz):
+        """
+        xyz: (X, Y, Z) 3D 座標
+        僅保留最近 10 筆歷史
+        """
+        self.history.append(xyz)
+        if len(self.history) > 10:
+            self.history.pop(0)
 
 # ========== (B) 簡易 IOU 函數，做關聯用 ==========
 def iou(bbox1, bbox2):
@@ -126,17 +160,20 @@ def iou(bbox1, bbox2):
         return 0
     return inter_area / union_area
 
+# ========== (c) 3D座標平均函數 ==========
+def average_3d_coordinates(history):
+    if not history:  # 若 history 為空
+        return None  
+
+    history_array = np.array(history)  # 轉為 NumPy 陣列，形狀為 (N, 3)
+    mean_xyz = np.mean(history_array, axis=0)  # 計算每個維度的平均
+    return tuple(mean_xyz)  # 轉回 tuple 較易讀
+
 # ========== (C) 主程式：結合 runRealsense.py + 多物件追蹤 ==========
 def main():
     # YOLO + RealSense 初始化
-    pipeline = rs.pipeline()
-    config = rs.config()
-    config.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
-    config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
-    pipeline.start(config)
-
-    align = rs.align(rs.stream.color)
-    model = YOLO("runs/detect/train7/weights/best.pt")  # 替換為自己的權重
+    # 初始化 YOLO 與 RealSense
+    pipeline, align, model = init_realsense_yolo()
 
     cv2.namedWindow("RealSense YOLO Detection", cv2.WINDOW_NORMAL)
 
@@ -149,15 +186,10 @@ def main():
     IOU_THRESHOLD = 0.3
 
     # 讀取座標轉換參數
-    fs = cv2.FileStorage("camera_calibration_result.yaml", cv2.FILE_STORAGE_READ)
-    # 讀取 handEyeRotation
-    handEyeRotation_node = fs.getNode("handEyeRotation")
-    handEyeRotation = handEyeRotation_node.mat()
+    handEyeRotation, handEyeTranslation = load_camera_calibration()
 
-    # 讀取 handEyeTranslation
-    handEyeTranslation_node = fs.getNode("handEyeTranslation")
-    handEyeTranslation = handEyeTranslation_node.mat()
-
+    # ★★★ 記錄開始時間，用來計算 3 秒 ★★★
+    start_time = time.time()
 
     last_distance = None  # frame未初始化
     try:
@@ -298,14 +330,34 @@ def main():
                 text_3d = f"3D=({X:.3f}, {Y:.3f}, {Z:.3f})m"
                 cv2.putText(annotated_frame, text_3d, (x, y + 15),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                
+                # ★★★ 把該追蹤器當前 3D 座標加到 history ★★★
+                kf.add_3d_history((X, Y, Z))
 
             cv2.imshow("RealSense YOLO Detection", annotated_frame)
+
+            # ★★★ 檢查是否超過 3 秒 ★★★
+            elapsed_time = time.time() - start_time
+            if elapsed_time > 3:
+                break
+            # 手動退出，press q
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
     finally:
         pipeline.stop()
         cv2.destroyAllWindows()
+
+    # ★★★ 程式結束後，可將每個 KF 的 history 輸出 ★★★
+    for i, kf in enumerate(trackers):
+        print(f"Tracker ID = {i}, class_ = {model.names[kf.class_id]}, history(len = {len(kf.history)}) =")
+        for idx, (X, Y, Z) in enumerate(kf.history):
+            print(f"  Frame {idx}: ({X:.3f}, {Y:.3f}, {Z:.3f})")
+        (AVG_X, AVG_Y, AVG_Z) = average_3d_coordinates(kf.history)
+        print(f"平均座標: ({AVG_X:.3f}, {AVG_Y:.3f}, {AVG_Z:.3f})")
+    print(handEyeRotation)
+    print(handEyeTranslation)
+        
 
 if __name__ == "__main__":
     main()
