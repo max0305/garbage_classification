@@ -19,8 +19,10 @@ def init_realsense_yolo():
     config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
     pipeline.start(config)
 
+    # 深度影像對齊 RGB 影像
     align = rs.align(rs.stream.color)
-    model = YOLO("runs/detect/train7/weights/best.pt")  # 替換為自己的權重
+    # YOLO權重
+    model = YOLO("runs/detect/train7/weights/best.pt")
 
     return pipeline, align, model
 
@@ -31,6 +33,17 @@ def load_camera_calibration():
     handEyeTranslation = fs.getNode("handEyeTranslation").mat()
     return handEyeRotation, handEyeTranslation
 
+# ========== 獲取RealSense影像與處理 ==========
+def get_realsense_frames(pipeline, align):
+    frames = pipeline.wait_for_frames()
+    aligned_frames = align.process(frames)
+    color_frame = aligned_frames.get_color_frame()
+    depth_frame = aligned_frames.get_depth_frame()
+    if not color_frame or not depth_frame:
+        return None, None, None
+
+    depth_intrinsics = depth_frame.profile.as_video_stream_profile().get_intrinsics()
+    return color_frame, depth_frame, depth_intrinsics
 
 # ========== (A) 簡易的 2D Bounding Box 卡曼濾波器 ==========
 class KalmanFilterBBox:
@@ -194,15 +207,11 @@ def main():
     last_distance = None  # frame未初始化
     try:
         while True:
-            frames = pipeline.wait_for_frames()
-            aligned_frames = align.process(frames)
-            color_frame = aligned_frames.get_color_frame()
-            depth_frame = aligned_frames.get_depth_frame()
+            # 取得對齊後的影像與深度
+            # depth_intrinsics 中就包含 fx, fy, ppx, ppy, distortion 等資訊
+            color_frame, depth_frame, depth_intrinsics = get_realsense_frames(pipeline, align)
             if not color_frame or not depth_frame:
                 continue
-
-            # depth_intrinsics 中就包含 fx, fy, ppx, ppy, distortion 等資訊 
-            depth_intrinsics = depth_frame.profile.as_video_stream_profile().get_intrinsics()
 
             frame = np.asanyarray(color_frame.get_data())
             results = model(frame)
@@ -355,8 +364,6 @@ def main():
             print(f"  Frame {idx}: ({X:.3f}, {Y:.3f}, {Z:.3f})")
         (AVG_X, AVG_Y, AVG_Z) = average_3d_coordinates(kf.history)
         print(f"平均座標: ({AVG_X:.3f}, {AVG_Y:.3f}, {AVG_Z:.3f})")
-    print(handEyeRotation)
-    print(handEyeTranslation)
         
 
 if __name__ == "__main__":
