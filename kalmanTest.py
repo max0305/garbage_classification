@@ -90,8 +90,12 @@ class KalmanFilterBBox:
         # 追蹤品質計數器 (可用來判斷追蹤器是否可信，或失效等)
         self.lost_frames = 0
 
-        # ★★★ 保存最近 10 幀的 3D 座標紀錄 ★★★
+        # 保存最近 10 幀的 3D 座標紀錄 
         self.history = []
+
+        # 原先只存 (X, Y, Z)，現在加入 confidence，
+        # 故改用 (X, Y, Z, conf) 四元組。
+        self.current_conf = 0.0  # 用於記錄本幀偵測信心
 
     def init_state(self, bbox):
         # bbox: (x, y, w, h)
@@ -135,12 +139,13 @@ class KalmanFilterBBox:
         h = max(h, 1)
         return (int(x), int(y), int(w), int(h))
     
-    def add_3d_history(self, xyz):
+    def add_3d_history(self, xyz, conf):
         """
         xyz: (X, Y, Z) 3D 座標
+        conf: float, 本次追蹤/偵測的信心度
         僅保留最近 10 筆歷史
         """
-        self.history.append(xyz)
+        self.history.append((xyz[0], xyz[1], xyz[2], conf))
         if len(self.history) > 10:
             self.history.pop(0)
 
@@ -178,7 +183,7 @@ def average_3d_coordinates(history):
     if not history:  # 若 history 為空
         return None  
 
-    history_array = np.array(history)  # 轉為 NumPy 陣列，形狀為 (N, 3)
+    history_array = np.array(history)  # 轉為 NumPy 陣列，形狀為 (N, 4)
     mean_xyz = np.mean(history_array, axis=0)  # 計算每個維度的平均
     return tuple(mean_xyz)  # 轉回 tuple 較易讀
 
@@ -201,7 +206,7 @@ def main():
     # 讀取座標轉換參數
     handEyeRotation, handEyeTranslation = load_camera_calibration()
 
-    # ★★★ 記錄開始時間，用來計算 3 秒 ★★★
+    # 記錄開始時間，用來計算 3 秒
     start_time = time.time()
 
     last_distance = None  # frame未初始化
@@ -227,8 +232,10 @@ def main():
 
             # 2) 蒐集所有新的偵測框
             det_bboxes = []
+            # 紀錄偵測物件id
             class_ids = []
-
+            # 新增 confs 用來保存對應的信心度
+            confs = []  
             for box in boxes:
                 x1, y1, x2, y2 = box.xyxy[0]
                 w = x2 - x1
@@ -242,6 +249,10 @@ def main():
                 # 取得對應的 class id（即索引）
                 cls_id = int(box.cls[0])
                 class_ids.append(cls_id)
+
+                 # 取得及紀錄 YOLO 的 confidence 
+                conf = float(box.conf[0])
+                confs.append(conf)
 
             # 3) 簡易的資料關聯: 對每個偵測框找最適合的 tracker
             matched_trackers = set()  # 用來標記哪些 tracker 已被匹配
@@ -260,12 +271,15 @@ def main():
                 if best_iou > IOU_THRESHOLD and best_tracker is not None:
                     # 用量測更新
                     trackers[best_tracker].update(dbbox)
+                    # 把此偵測框的 confidence 記錄到該追蹤器
+                    trackers[best_tracker].current_conf = confs[i]
                     matched_trackers.add(best_tracker)
                 else:
                     # 找不到合適的 => 新增一個新的追蹤器
                     cls_id = class_ids[i]       # 對應到當前的物件類別
                     new_kf = KalmanFilterBBox(dt,  class_id=cls_id)
                     new_kf.init_state(dbbox)
+                    new_kf.current_conf = confs[i]
                     trackers.append(new_kf)
 
             # 4) 處理「沒有被匹配的 tracker」 => lost_frames 累加
@@ -319,7 +333,6 @@ def main():
                     distance
                 )
                 # 輸出的座標依 RealSense 機型通常是 (X:右正, Y:下正, Z:前正)
-                # 若你需要 Y:上正，可自行調整 Y = -Y 等
 
                 point_3d_arr = np.array(point_3d).reshape(3, 1)  # shape = (3,1)
                 
@@ -340,14 +353,19 @@ def main():
                 cv2.putText(annotated_frame, text_3d, (x, y + 15),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
                 
-                # ★★★ 把該追蹤器當前 3D 座標加到 history ★★★
-                kf.add_3d_history((X, Y, Z))
+                # 把該追蹤器當前 3D 座標加到 history
+                kf.add_3d_history((X, Y, Z), kf.current_conf)
+
+                # 顯示信心度(Optional)
+                text_conf = f"Conf={kf.current_conf:.2f}"
+                cv2.putText(annotated_frame, text_conf, (x + 2, y + 50),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
             cv2.imshow("RealSense YOLO Detection", annotated_frame)
 
-            # ★★★ 檢查是否超過 3 秒 ★★★
+            # 檢查是否超過 3 秒
             elapsed_time = time.time() - start_time
-            if elapsed_time > 3:
+            if elapsed_time > 10:
                 break
             # 手動退出，press q
             if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -357,13 +375,16 @@ def main():
         pipeline.stop()
         cv2.destroyAllWindows()
 
-    # ★★★ 程式結束後，可將每個 KF 的 history 輸出 ★★★
+    # 程式結束後，可將每個 KF 的 history 輸出
     for i, kf in enumerate(trackers):
         print(f"Tracker ID = {i}, class_ = {model.names[kf.class_id]}, history(len = {len(kf.history)}) =")
-        for idx, (X, Y, Z) in enumerate(kf.history):
-            print(f"  Frame {idx}: ({X:.3f}, {Y:.3f}, {Z:.3f})")
-        (AVG_X, AVG_Y, AVG_Z) = average_3d_coordinates(kf.history)
-        print(f"平均座標: ({AVG_X:.3f}, {AVG_Y:.3f}, {AVG_Z:.3f})")
+        for idx, (X, Y, Z, conf) in enumerate(kf.history):
+            print(f"  Frame {idx} coordinate: ({X:.3f}, {Y:.3f}, {Z:.3f}), confidence: {conf:.2f}")
+        (AVG_X, AVG_Y, AVG_Z, AVG_CONF) = average_3d_coordinates(kf.history)
+        if AVG_X is not None:
+            print(f"平均座標: ({AVG_X:.3f}, {AVG_Y:.3f}, {AVG_Z:.3f}), 平均信心: {AVG_CONF:.3f}")
+        else: 
+            print("平均座標: None")
         
 
 if __name__ == "__main__":
