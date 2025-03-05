@@ -189,214 +189,218 @@ def average_3d_coordinates(history):
 
 # ========== (C) 主程式：結合 runRealsense.py + 多物件追蹤 ==========
 def main():
-    # YOLO + RealSense 初始化
-    # 初始化 YOLO 與 RealSense
-    pipeline, align, model = init_realsense_yolo()
+    while(1): 
+        # YOLO + RealSense 初始化
+        # 初始化 YOLO 與 RealSense
+        pipeline, align, model = init_realsense_yolo()
 
-    cv2.namedWindow("RealSense YOLO Detection", cv2.WINDOW_NORMAL)
+        cv2.namedWindow("RealSense YOLO Detection", cv2.WINDOW_NORMAL)
 
-    # 建立追蹤器列表
-    trackers = []
+        # 建立追蹤器列表
+        trackers = []
 
-    # 自訂參數
-    dt = 1/30
-    MAX_LOST = 10  # 容許多少幀未匹配就刪除追蹤器
-    IOU_THRESHOLD = 0.3
+        # 自訂參數
+        dt = 1/30
+        MAX_LOST = 10  # 容許多少幀未匹配就刪除追蹤器
+        IOU_THRESHOLD = 0.3
 
-    # 讀取座標轉換參數
-    handEyeRotation, handEyeTranslation = load_camera_calibration()
+        # 讀取座標轉換參數
+        handEyeRotation, handEyeTranslation = load_camera_calibration()
 
-    # 記錄開始時間，用來計算 3 秒
-    start_time = time.time()
+        # 記錄開始時間，用來計算 3 秒
+        start_time = time.time()
 
-    last_distance = None  # frame未初始化
-    try:
-        while True:
-            # 取得對齊後的影像與深度
-            # depth_intrinsics 中就包含 fx, fy, ppx, ppy, distortion 等資訊
-            color_frame, depth_frame, depth_intrinsics = get_realsense_frames(pipeline, align)
-            if not color_frame or not depth_frame:
-                continue
+        last_distance = None  # frame未初始化
+        try:
+            while True:
+                # 取得對齊後的影像與深度
+                # depth_intrinsics 中就包含 fx, fy, ppx, ppy, distortion 等資訊
+                color_frame, depth_frame, depth_intrinsics = get_realsense_frames(pipeline, align)
+                if not color_frame or not depth_frame:
+                    continue
 
-            frame = np.asanyarray(color_frame.get_data())
-            results = model(frame)
-            det = results[0]
-            boxes = det.boxes
-            #annotated_frame = det.plot().copy()
-            annotated_frame = frame.copy()
+                frame = np.asanyarray(color_frame.get_data())
+                results = model(frame)
+                det = results[0]
+                boxes = det.boxes
+                #annotated_frame = det.plot().copy()
+                annotated_frame = frame.copy()
 
-            # 1) 先對所有 tracker 做 predict
-            for kf in trackers:
-                kf.predict()
-                # 若本迴圈沒更新到量測，lost_frames 會在下面++一次
+                # 1) 先對所有 tracker 做 predict
+                for kf in trackers:
+                    kf.predict()
+                    # 若本迴圈沒更新到量測，lost_frames 會在下面++一次
 
-            # 2) 蒐集所有新的偵測框
-            det_bboxes = []
-            # 紀錄偵測物件id
-            class_ids = []
-            # 新增 confs 用來保存對應的信心度
-            confs = []  
-            for box in boxes:
-                x1, y1, x2, y2 = box.xyxy[0]
-                w = x2 - x1
-                h = y2 - y1
-                x = x1
-                y = y1
-                # 這裡使用左上 (x, y, w, h) 作為卡曼濾波器量測
-                # 也可改成中心 (cx, cy, w, h) 方式
-                det_bboxes.append((int(x), int(y), int(w), int(h)))
+                # 2) 蒐集所有新的偵測框
+                det_bboxes = []
+                # 紀錄偵測物件id
+                class_ids = []
+                # 新增 confs 用來保存對應的信心度
+                confs = []  
+                for box in boxes:
+                    x1, y1, x2, y2 = box.xyxy[0]
+                    w = x2 - x1
+                    h = y2 - y1
+                    x = x1
+                    y = y1
+                    # 這裡使用左上 (x, y, w, h) 作為卡曼濾波器量測
+                    # 也可改成中心 (cx, cy, w, h) 方式
+                    det_bboxes.append((int(x), int(y), int(w), int(h)))
 
-                # 取得對應的 class id（即索引）
-                cls_id = int(box.cls[0])
-                class_ids.append(cls_id)
+                    # 取得對應的 class id（即索引）
+                    cls_id = int(box.cls[0])
+                    class_ids.append(cls_id)
 
-                 # 取得及紀錄 YOLO 的 confidence 
-                conf = float(box.conf[0])
-                confs.append(conf)
+                    # 取得及紀錄 YOLO 的 confidence 
+                    conf = float(box.conf[0])
+                    confs.append(conf)
 
-            # 3) 簡易的資料關聯: 對每個偵測框找最適合的 tracker
-            matched_trackers = set()  # 用來標記哪些 tracker 已被匹配
-            for i, dbbox in enumerate(det_bboxes):
-                best_iou = 0
-                best_tracker = None
-                for kf_idx, kf in enumerate(trackers):
-                    # 計算與預測框的IOU
-                    pred_bbox = kf.get_bbox()  # 拿到平滑後的預測框
-                    current_iou = iou(pred_bbox, dbbox)
-                    if current_iou > best_iou:
-                        best_iou = current_iou
-                        best_tracker = kf_idx
+                # 3) 簡易的資料關聯: 對每個偵測框找最適合的 tracker
+                matched_trackers = set()  # 用來標記哪些 tracker 已被匹配
+                for i, dbbox in enumerate(det_bboxes):
+                    best_iou = 0
+                    best_tracker = None
+                    for kf_idx, kf in enumerate(trackers):
+                        # 計算與預測框的IOU
+                        pred_bbox = kf.get_bbox()  # 拿到平滑後的預測框
+                        current_iou = iou(pred_bbox, dbbox)
+                        if current_iou > best_iou:
+                            best_iou = current_iou
+                            best_tracker = kf_idx
 
-                # 若 IOU 大於閾值，視為同一物件 => update
-                if best_iou > IOU_THRESHOLD and best_tracker is not None:
-                    # 用量測更新
-                    trackers[best_tracker].update(dbbox)
-                    # 把此偵測框的 confidence 記錄到該追蹤器
-                    trackers[best_tracker].current_conf = confs[i]
-                    matched_trackers.add(best_tracker)
-                else:
-                    # 找不到合適的 => 新增一個新的追蹤器
-                    cls_id = class_ids[i]       # 對應到當前的物件類別
-                    new_kf = KalmanFilterBBox(dt,  class_id=cls_id)
-                    new_kf.init_state(dbbox)
-                    new_kf.current_conf = confs[i]
-                    trackers.append(new_kf)
+                    # 若 IOU 大於閾值，視為同一物件 => update
+                    if best_iou > IOU_THRESHOLD and best_tracker is not None:
+                        # 用量測更新
+                        trackers[best_tracker].update(dbbox)
+                        # 把此偵測框的 confidence 記錄到該追蹤器
+                        trackers[best_tracker].current_conf = confs[i]
+                        matched_trackers.add(best_tracker)
+                    else:
+                        # 找不到合適的 => 新增一個新的追蹤器
+                        cls_id = class_ids[i]       # 對應到當前的物件類別
+                        new_kf = KalmanFilterBBox(dt,  class_id=cls_id)
+                        new_kf.init_state(dbbox)
+                        new_kf.current_conf = confs[i]
+                        trackers.append(new_kf)
 
-            # 4) 處理「沒有被匹配的 tracker」 => lost_frames 累加
-            for idx, kf in enumerate(trackers):
-                if idx not in matched_trackers:
-                    kf.lost_frames += 1
+                # 4) 處理「沒有被匹配的 tracker」 => lost_frames 累加
+                for idx, kf in enumerate(trackers):
+                    if idx not in matched_trackers:
+                        kf.lost_frames += 1
 
-            # 5) 移除 lost_frames 過多的 tracker
-            trackers = [kf for kf in trackers if kf.lost_frames <= MAX_LOST]
+                # 5) 移除 lost_frames 過多的 tracker
+                trackers = [kf for kf in trackers if kf.lost_frames <= MAX_LOST]
 
-            # 6) 繪製結果：用每個 tracker 的平滑後 bbox 在影像上畫框
-            # 加上「追蹤ID」和「3D座標」(可參考 runRealsense.py 中的 depth_frame 與深度內參)
-            for idx, kf in enumerate(trackers):  # 用 enumerate 取得追蹤器索引
-                x, y, w, h = kf.get_bbox()
-                x2, y2 = x + w, y + h
+                # 6) 繪製結果：用每個 tracker 的平滑後 bbox 在影像上畫框
+                # 加上「追蹤ID」和「3D座標」(可參考 runRealsense.py 中的 depth_frame 與深度內參)
+                for idx, kf in enumerate(trackers):  # 用 enumerate 取得追蹤器索引
+                    x, y, w, h = kf.get_bbox()
+                    x2, y2 = x + w, y + h
 
-                # 在 2D 畫面上繪製方框
-                cv2.rectangle(annotated_frame, (x, y), (x2, y2), (0, 255, 0), 2)
+                    # 在 2D 畫面上繪製方框
+                    cv2.rectangle(annotated_frame, (x, y), (x2, y2), (0, 255, 0), 2)
 
-                # 顯示該 tracker 之類別 (若為 None 表示沒偵測到就不顯示)
-                if kf.class_id is not None:
-                    class_name = CLASS_NAMES[kf.class_id]   # 從 CLASS_NAMES 表拿類別字串
-                    '''
-                    正常應從model.names中拿字串，但cv2無法顯示中文字，故另設計英文對照表 CLASS_NAMES 替代
-                    # class_name = model.names[kf.class_id]  # 從模型 names 表拿字串
-                    '''
-                    # 文字位置可自行調整
-                    cv2.putText(annotated_frame, class_name, (x + 2, y + 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                
-                # === (A) 加入 3D 座標計算 ===
-                # 1) 取出 Bounding Box 中心，通常 (cx, cy) = (x + w/2, y + h/2)
-                center_x = x + w // 2
-                center_y = y + h // 2
-                
-                # 2) 由 depth_frame 取得該中心像素的深度 (公尺)
-                distance = depth_frame.get_distance(center_x, center_y)
-                if last_distance is None:
-                    # 第一幀，直接用當前值初始化
+                    # 顯示該 tracker 之類別 (若為 None 表示沒偵測到就不顯示)
+                    if kf.class_id is not None:
+                        class_name = CLASS_NAMES[kf.class_id]   # 從 CLASS_NAMES 表拿類別字串
+                        '''
+                        正常應從model.names中拿字串，但cv2無法顯示中文字，故另設計英文對照表 CLASS_NAMES 替代
+                        # class_name = model.names[kf.class_id]  # 從模型 names 表拿字串
+                        '''
+                        # 文字位置可自行調整
+                        cv2.putText(annotated_frame, class_name, (x + 2, y + 30),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    
+                    # === (A) 加入 3D 座標計算 ===
+                    # 1) 取出 Bounding Box 中心，通常 (cx, cy) = (x + w/2, y + h/2)
+                    center_x = x + w // 2
+                    center_y = y + h // 2
+                    
+                    # 2) 由 depth_frame 取得該中心像素的深度 (公尺)
+                    distance = depth_frame.get_distance(center_x, center_y)
+                    if last_distance is None:
+                        # 第一幀，直接用當前值初始化
+                        last_distance = distance
+                    elif distance <= 0 or (abs(distance - last_distance) > 0.05 and last_distance != 0):
+                        distance = last_distance
+
                     last_distance = distance
-                elif distance <= 0 or (abs(distance - last_distance) > 0.05 and last_distance != 0):
-                    distance = last_distance
 
-                last_distance = distance
+                    
+                    # 3) 使用 RealSense 的函式，將像素座標 + 深度轉成 3D 座標 (X, Y, Z)
+                    point_3d = rs.rs2_deproject_pixel_to_point(
+                        depth_intrinsics,
+                        [center_x, center_y],
+                        distance
+                    )
+                    # 輸出的座標依 RealSense 機型通常是 (X:右正, Y:下正, Z:前正)
 
-                
-                # 3) 使用 RealSense 的函式，將像素座標 + 深度轉成 3D 座標 (X, Y, Z)
-                point_3d = rs.rs2_deproject_pixel_to_point(
-                    depth_intrinsics,
-                    [center_x, center_y],
-                    distance
-                )
-                # 輸出的座標依 RealSense 機型通常是 (X:右正, Y:下正, Z:前正)
+                    point_3d_arr = np.array(point_3d).reshape(3, 1)  # shape = (3,1)
+                    
+                    # 座標轉換
+                    point_arm = handEyeRotation @ point_3d_arr + handEyeTranslation
 
-                point_3d_arr = np.array(point_3d).reshape(3, 1)  # shape = (3,1)
-                
-                # 座標轉換
-                point_arm = handEyeRotation @ point_3d_arr + handEyeTranslation
+                    # 解包成純量
+                    X, Y, Z = point_arm.ravel()  # ravel() 會把 (3,1) 攤平成 (3,)
 
-                # 解包成純量
-                X, Y, Z = point_arm.ravel()  # ravel() 會把 (3,1) 攤平成 (3,)
+                    # === (B) 顯示追蹤ID 與 3D座標文字 ===
+                    # 這裡將 ID 顯示於框的上方
+                    text_id = f"ID={idx}"
+                    cv2.putText(annotated_frame, text_id, (x, y - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    
+                    # 顯示 3D 座標資訊，可放在框內或旁邊
+                    text_3d = f"3D=({X:.3f}, {Y:.3f}, {Z:.3f})m"
+                    cv2.putText(annotated_frame, text_3d, (x, y + 15),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    
+                    # 把該追蹤器當前 3D 座標加到 history
+                    kf.add_3d_history((X, Y, Z), kf.current_conf)
 
-                # === (B) 顯示追蹤ID 與 3D座標文字 ===
-                # 這裡將 ID 顯示於框的上方
-                text_id = f"ID={idx}"
-                cv2.putText(annotated_frame, text_id, (x, y - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                
-                # 顯示 3D 座標資訊，可放在框內或旁邊
-                text_3d = f"3D=({X:.3f}, {Y:.3f}, {Z:.3f})m"
-                cv2.putText(annotated_frame, text_3d, (x, y + 15),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                
-                # 把該追蹤器當前 3D 座標加到 history
-                kf.add_3d_history((X, Y, Z), kf.current_conf)
+                    # 顯示信心度(Optional)
+                    text_conf = f"Conf={kf.current_conf:.2f}"
+                    cv2.putText(annotated_frame, text_conf, (x + 2, y + 50),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-                # 顯示信心度(Optional)
-                text_conf = f"Conf={kf.current_conf:.2f}"
-                cv2.putText(annotated_frame, text_conf, (x + 2, y + 50),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                cv2.imshow("RealSense YOLO Detection", annotated_frame)
 
-            cv2.imshow("RealSense YOLO Detection", annotated_frame)
+                # 檢查是否超過 3 秒
+                elapsed_time = time.time() - start_time
+                if elapsed_time > 10:
+                    break
+                elif elapsed_time > 3 and len(trackers) == 0: 
+                    print("3秒內未正確偵測到任何目標，程式結束。")
+                    return
+                # 手動退出，press q
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
 
-            # 檢查是否超過 3 秒
-            elapsed_time = time.time() - start_time
-            if elapsed_time > 10:
-                break
-            # 手動退出，press q
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+        finally:
+            pipeline.stop()
+            cv2.destroyAllWindows()
 
-    finally:
-        pipeline.stop()
-        cv2.destroyAllWindows()
+        # 所有目標中最大信心值
+        max_conf = 0
+        # 最大信心值的目標index
+        target_index = None
+        # 程式結束後，可將每個 KF 的 history 輸出
+        for i, kf in enumerate(trackers):
+            print(f"Tracker ID = {i}, class_ = {model.names[kf.class_id]}, history(len = {len(kf.history)}) =")
+            for idx, (X, Y, Z, conf) in enumerate(kf.history):
+                print(f"  Frame {idx} coordinate: ({X:.3f}, {Y:.3f}, {Z:.3f}), confidence: {conf:.2f}")
+            (AVG_X, AVG_Y, AVG_Z, AVG_CONF) = average_3d_coordinates(kf.history)
+            if AVG_X is not None:
+                print(f"  平均座標: ({AVG_X:.3f}, {AVG_Y:.3f}, {AVG_Z:.3f}), 平均信心: {AVG_CONF:.2f}")
+            else: 
+                print("平均座標: None")
 
-    # 所有目標中最大信心值
-    max_conf = 0
-    # 最大信心值的目標index
-    target_index = None
-    # 程式結束後，可將每個 KF 的 history 輸出
-    for i, kf in enumerate(trackers):
-        print(f"Tracker ID = {i}, class_ = {model.names[kf.class_id]}, history(len = {len(kf.history)}) =")
-        for idx, (X, Y, Z, conf) in enumerate(kf.history):
-            print(f"  Frame {idx} coordinate: ({X:.3f}, {Y:.3f}, {Z:.3f}), confidence: {conf:.2f}")
-        (AVG_X, AVG_Y, AVG_Z, AVG_CONF) = average_3d_coordinates(kf.history)
-        if AVG_X is not None:
-            print(f"  平均座標: ({AVG_X:.3f}, {AVG_Y:.3f}, {AVG_Z:.3f}), 平均信心: {AVG_CONF:.2f}")
-        else: 
-            print("平均座標: None")
-
-        if AVG_CONF is not None and AVG_CONF > max_conf: 
-            max_conf = AVG_CONF
-            target_index = i
-    if target_index is not None and max_conf != 0:
-        (TAR_X, TAR_Y, TAR_Z, TAR_CONF) = average_3d_coordinates(kf.history)
-        print(f"目標id: {target_index}, 平均信心: {TAR_CONF:.2f}")
-        print(f"目標座標: ({TAR_X:.3f}, {TAR_Y:.3f}, {TAR_Z:.3f})")
+            if AVG_CONF is not None and AVG_CONF > max_conf: 
+                max_conf = AVG_CONF
+                target_index = i
+        if target_index is not None and max_conf != 0:
+            (TAR_X, TAR_Y, TAR_Z, TAR_CONF) = average_3d_coordinates(kf.history)
+            print(f"目標id: {target_index}, 平均信心: {TAR_CONF:.2f}")
+            print(f"目標座標: ({TAR_X:.3f}, {TAR_Y:.3f}, {TAR_Z:.3f})")
 
 if __name__ == "__main__":
     main()
