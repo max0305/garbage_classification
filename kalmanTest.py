@@ -375,6 +375,10 @@ def main():
         pipeline.stop()
         cv2.destroyAllWindows()
 
+    # 所有目標中最大信心值
+    max_conf = 0
+    # 最大信心值的目標index
+    target_index = None
     # 程式結束後，可將每個 KF 的 history 輸出
     for i, kf in enumerate(trackers):
         print(f"Tracker ID = {i}, class_ = {model.names[kf.class_id]}, history(len = {len(kf.history)}) =")
@@ -382,10 +386,17 @@ def main():
             print(f"  Frame {idx} coordinate: ({X:.3f}, {Y:.3f}, {Z:.3f}), confidence: {conf:.2f}")
         (AVG_X, AVG_Y, AVG_Z, AVG_CONF) = average_3d_coordinates(kf.history)
         if AVG_X is not None:
-            print(f"平均座標: ({AVG_X:.3f}, {AVG_Y:.3f}, {AVG_Z:.3f}), 平均信心: {AVG_CONF:.3f}")
+            print(f"  平均座標: ({AVG_X:.3f}, {AVG_Y:.3f}, {AVG_Z:.3f}), 平均信心: {AVG_CONF:.2f}")
         else: 
             print("平均座標: None")
-        
+
+        if AVG_CONF is not None and AVG_CONF > max_conf: 
+            max_conf = AVG_CONF
+            target_index = i
+    if target_index is not None and max_conf != 0:
+        (TAR_X, TAR_Y, TAR_Z, TAR_CONF) = average_3d_coordinates(kf.history)
+        print(f"目標id: {target_index}, 平均信心: {TAR_CONF:.2f}")
+        print(f"目標座標: ({TAR_X:.3f}, {TAR_Y:.3f}, {TAR_Z:.3f})")
 
 if __name__ == "__main__":
     main()
