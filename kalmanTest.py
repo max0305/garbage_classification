@@ -369,11 +369,11 @@ def main():
                 if elapsed_time > 10:
                     break
                 elif elapsed_time > 3 and len(trackers) == 0: 
-                    print("3秒內未正確偵測到任何目標，程式結束。")
+                    print("未穩定偵測到任何目標，程式結束。")
                     return
                 # 手動退出，press q
                 if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
+                    return
 
         finally:
             pipeline.stop()
@@ -398,7 +398,7 @@ def main():
                 max_conf = AVG_CONF
                 target_index = i
         if target_index is not None and max_conf != 0:
-            (TAR_X, TAR_Y, TAR_Z, TAR_CONF) = average_3d_coordinates(kf.history)
+            (TAR_X, TAR_Y, TAR_Z, TAR_CONF) = average_3d_coordinates(trackers[target_index].history)
             print(f"目標id: {target_index}, 平均信心: {TAR_CONF:.2f}")
             print(f"目標座標: ({TAR_X:.3f}, {TAR_Y:.3f}, {TAR_Z:.3f})")
 
