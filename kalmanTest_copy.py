@@ -335,8 +335,8 @@ def main():
                     )
                     X_img, Y_img, Z_img = point_3d
                     # 輸出的座標依 RealSense 機型通常是 (X:右正, Y:下正, Z:前正)
-                    text_img = f"image coor=f{X_img:.2f}, Y={Y_img:.2f}, Z={Z_img:.2f} m"
-                    cv2.putText(annotated_frame, text_img, (x, y - 20),
+                    text_img = f"image coor={X_img:.2f}, Y={Y_img:.2f}, Z={Z_img:.2f} m"
+                    cv2.putText(annotated_frame, text_img, (x, y - 30),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
                     
 
