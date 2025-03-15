@@ -388,6 +388,8 @@ def main():
         max_conf = 0
         # 最大信心值的目標index
         target_index = None
+        # 過濾掉 history 少於 10 筆的 tracker
+        trackers = [kf for kf in trackers if len(kf.history) >= 10]
         # 程式結束後，可將每個 KF 的 history 輸出
         for i, kf in enumerate(trackers):
             print(f"Tracker ID = {i}, class_ = {model.names[kf.class_id]}, history(len = {len(kf.history)}) =")
