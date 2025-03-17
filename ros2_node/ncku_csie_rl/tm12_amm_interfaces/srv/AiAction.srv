@@ -1,0 +1,6 @@
+# AiAction.srv
+int32 class_id
+int32 repeat_times
+---
+bool success
+string message

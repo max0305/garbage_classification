@@ -1,0 +1,37 @@
+<package format="3">
+  <!-- 1) 與資料夾同名 -->
+  <name>detection</name>
+  <version>0.0.1</version>
+  <description>ROS2 package for a detection node</description>
+
+  <maintainer email="your_email@example.com">YourName</maintainer>
+  <license>Apache-2.0</license>
+
+  <!-- 2) ROS2 Python 相關 buildtool -->
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <!-- 3) 依據實際需求增加套件相依，如 rclpy, sensor_msgs, etc. -->
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+
+  <!-- service depend-->
+  <depend>rosidl_default_generators</depend>
+  <depend>rosidl_default_runtime</depend>
+  <depend>tm12_amm_interfaces</depend>
+
+  <!-- 若您有使用 pyrealsense2、numpy、opencv-python、ultralytics等第三方庫，也可宣告 -->
+  <depend>pyrealsense2</depend>
+  <depend>numpy</depend>
+  <depend>opencv-python</depend>
+  <depend>ultralytics</depend>
+  <depend>cv2</depend>
+  <depend>time</depend>
+
+  <!-- 4) 指明這是 Python build type -->
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
