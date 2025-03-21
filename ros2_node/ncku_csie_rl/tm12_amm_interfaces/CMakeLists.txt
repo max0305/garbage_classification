@@ -21,6 +21,7 @@ set(msg_files
 
 set(srv_files
   "srv/Calibration.srv"
+  "srv/AiAction.srv" #新增
 )
 
 set(action_files
