@@ -207,6 +207,12 @@ class DetectionNode(Node):
         super().__init__('detection_node')  # Node 名稱 = detection
         self.get_logger().info('Detection node started')
 
+        # 建立 AiAction 的 Service Client
+        self.cli = self.create_client(AiAction, 'ai_action')
+        while not self.cli.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Waiting for AiAction service...')
+
+
         # 1) 初始化 YOLO 與 RealSense (原 kalmanTest.py 裏面 main() 的前半段)
         self.pipeline, self.align, self.model = init_realsense_yolo()
         self.get_logger().info("RealSense pipeline & YOLO model initialized.")

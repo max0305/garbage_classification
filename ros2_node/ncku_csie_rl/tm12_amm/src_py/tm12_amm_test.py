@@ -651,7 +651,7 @@ class TM12_AMM_ROS2_Node(Node):
 			repeat_times (int): 重複執行次數
 		"""
 		class_id = request.class_id
-		repeat_times = response.repeat_times
+		repeat_times = request.repeat_times
 
 		try:
 			for i in range(repeat_times):
