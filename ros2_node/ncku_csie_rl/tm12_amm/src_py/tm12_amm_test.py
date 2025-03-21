@@ -652,7 +652,17 @@ class TM12_AMM_ROS2_Node(Node):
 		"""
 		class_id = request.class_id
 		repeat_times = request.repeat_times
+		x = request.x
+		y = request.y
+		z = request.z
+		# 取得從客戶端送來的 X、Y、Z
+		self.get_logger().info(f"接收到 x={x}, y={y}, z={z}")
 
+		trashcan_position = [
+			[0., 0., 0., 0., 0., 0.],
+			[0., 0., 0., 0., 0., 0.],
+			[0., 0., 0., 0., 0., 0.],
+		]
 		try:
 			for i in range(repeat_times):
 				# 先移動到拍照位置
@@ -668,9 +678,10 @@ class TM12_AMM_ROS2_Node(Node):
 				)
 
 				# 透過自訂演算法獲取物體相對於相機的位姿
-				response = self.get_object_pose(
+				'''response = self.get_object_pose(
 				self.rgb_img_, self.depth_img_, self.camera_matrix_, self.dist_coeffs_
-				)
+				)'''
+				response = [x, y, z, 0., 0., 0.]
 
 				# 檢查所需資料是否都準備好
 				if any(x is None for x in [self.rgb_img_, self.depth_img_, self.camera_matrix_]):
@@ -693,6 +704,7 @@ class TM12_AMM_ROS2_Node(Node):
 				#original
 				#self.pick_at(pose_obj2base, 1)# [0.3571, -0.5795, 0.2, -3.1415, 0., 0.7854]
 				self.pick_at([0., 0., 0.4, 0., 0., 0.], 1)# [0.3571, -0.5795, 0.2, -3.1415, 0., 0.7854]
+				#self.place_at(trashcan_position[class_id])#  [0.3571, -0.5795, 0.2, -3.1415, 0., 0.7854]
 				self.place_at([0.1, -0.5, 0.1, -3.1415, 0., 0.7854])#  [0.3571, -0.5795, 0.2, -3.1415, 0., 0.7854]
 
 			# 回到安全位置
@@ -876,10 +888,17 @@ class TM12_AMM_ROS2_Node(Node):
 			self.wait_for_tm12_arrive(target_pose)
 
 			self.get_logger().info('機器人已到達目標位置')
-			self.call_grpr2f85_set_gripper_state(position=int(openning * 255 + 0.5), wait_time=0)
-
+			grpr_result = self.call_grpr2f85_set_gripper_state(position=int(openning * 255 + 0.5), wait_time=0)
+			#if(grpr_result.ulrest().status_code == 2) # 成功抓取
 			# 5. 提起物體回到預抓取位置
 			self.call_tm12_set_positions(positions=pre_grasp_pose)
+			'''elif(grpr_result.ulrest().status_code == 3)
+				self.get_logger().error('未抓取到物體')
+				try:
+					self.homing_execute()
+				except:
+					pass
+				return false'''
 
 			return True
 

@@ -264,8 +264,8 @@ class DetectionNode(Node):
         # 若超過10秒就自動結束
         if elapsed_time > 10:
             self.get_logger().info("偵測超過10秒，程式結束。")
-            self.print_final_results()
             cv2.destroyAllWindows()
+            self.print_final_results()
             self.start_time = time.time()
             self.trackers = [] 
             #self.destroy_node()
@@ -431,12 +431,21 @@ class DetectionNode(Node):
             print(f"目標id: {target_index}, 平均信心: {TAR_CONF:.2f}")
             print(f"目標座標: ({TAR_X:.3f}, {TAR_Y:.3f}, {TAR_Z:.3f})")
             #呼叫ai_action node
-            self.call_ai_action(self.trackers[target_index].class_id, 1)
+            self.call_ai_action(
+                self.trackers[target_index].class_id, 
+                1, 
+                TAR_X, 
+                TAR_Y, 
+                TAR_Z)
             
-    def call_ai_action(self, class_id, repeat_times):
+    def call_ai_action(self, class_id, repeat_times, x, y, z):
         request = AiAction.Request()
         request.class_id = class_id
         request.repeat_times = repeat_times
+        request.x = x
+        request.y = y
+        request.z = z
+
 
         future = self.cli.call_async(request)
         rclpy.spin_until_future_complete(self, future)
