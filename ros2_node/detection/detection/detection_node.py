@@ -29,7 +29,7 @@ def init_realsense_yolo():
     pipeline.start(config)
 
     align = rs.align(rs.stream.color)
-    model = YOLO("/home/jun/Downloads/best.pt") 
+    model = YOLO("/home/robotics/garbage_classification/runs/detect/train7/weights/best.pt") 
     return pipeline, align, model
 
 
@@ -257,7 +257,7 @@ class DetectionNode(Node):
         # 1) 時間判斷：若超過一定秒數，或長時間都偵測不到目標，就結束節點
         elapsed_time = time.time() - self.start_time
         # 若超過3秒仍沒追到任何東西，可視需求直接結束
-        if elapsed_time > 3 and len(self.trackers) == 0:
+        if elapsed_time > 10 and len(self.trackers) == 0:
             self.get_logger().info("未穩定偵測到任何目標，程式結束。")
             self.destroy_node()
             return
@@ -360,6 +360,7 @@ class DetectionNode(Node):
             center_x = x + w // 2
             center_y = y + h // 2
 
+
             # 取得深度
             distance = depth_frame.get_distance(center_x, center_y)
             if self.last_distance is None:
@@ -369,6 +370,8 @@ class DetectionNode(Node):
                 distance = self.last_distance
             self.last_distance = distance
 
+            center_y = 720 - center_y
+            center_x = 1280 - center_x
             # 反投影到 3D 座標
             point_3d = rs.rs2_deproject_pixel_to_point(
                 self.depth_intrinsics, [center_x, center_y], distance
@@ -442,13 +445,18 @@ class DetectionNode(Node):
         request = AiAction.Request()
         request.class_id = class_id
         request.repeat_times = repeat_times
-        request.x = x
+        request.x = x - 0.04
         request.y = y
         request.z = z
 
-
+        
         future = self.cli.call_async(request)
         rclpy.spin_until_future_complete(self, future)
+        # response = self.cli.call(request)
+        while rclpy.ok() and not future.done():
+            rclpy.spin_once(self)  # 執行一次事件循環
+            self.get_logger().info("等待服務回應...")
+            self.get_logger().info("接收Response")
         if future.result() is not None:
             response = future.result()
             if response.success:
@@ -457,6 +465,7 @@ class DetectionNode(Node):
                 self.get_logger().error(f"AI 動作失敗: {response.message}")
         else:
             self.get_logger().error("服務呼叫失敗")
+        
 
     def destroy_node(self):
         """
@@ -491,6 +500,7 @@ def main(args=None):
     """
     rclpy.init(args=args)
     node = DetectionNode()
+
     try:
         rclpy.spin(node)  # ROS2 事件迴圈，會自動呼叫 node.timer_callback()
     except KeyboardInterrupt:

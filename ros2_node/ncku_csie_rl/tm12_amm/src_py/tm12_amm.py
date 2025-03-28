@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
 
-
-
-
-
-
 import sys
 import os
 import numpy as np                                     # Python数值计算库
@@ -18,7 +13,7 @@ import numpy.typing as npt
 import signal
 import logging
 import asyncio
-from my_zmq_py.zmq_ai_service import zmq_ai_srv_clt
+# from my_zmq_py.zmq_ai_service import zmq_ai_srv_clt
 
 
 
@@ -52,6 +47,7 @@ from grpr2f85_ifaces.srv import SetGripperState, GetGripperStatus
 
 from tm12_amm_interfaces.action import Dotask, Calibration
 
+from tm12_amm_interfaces.srv import AiAction
 class CalibrationResult(TypedDict):
     error: Optional[float]
     camera_matrix: Optional[npt.NDArray]
@@ -167,7 +163,13 @@ class TM12_AMM_ROS2_Node(Node):
 		super().__init__(name)
 		self.get_logger().info('TM12_AMM_ROS2_Node_py init')
 		self.cv_bridge = CvBridge()
-
+        # 建立 Service
+		self.srv = self.create_service(
+            AiAction,         # 自訂的 Service 介面類型 (AiAction)
+            'ai_action',      # Service 名稱
+            self.ai_action	  # 指定回呼函式
+        )
+		self.get_logger().info("AiActionServerNode ready.")
 		# Initialize timer
 
 		self.set_parameter()
@@ -641,69 +643,91 @@ class TM12_AMM_ROS2_Node(Node):
 			self.get_logger().error(f'校正驗證過程發生錯誤: {e}')
 			raise
 
-	def ai_action(self, scenario, repeat_times=1): #ok
+	def ai_action(self, request, response): #ok
 		"""執行 AI 動作
 
 		Args:
 			scenario (str): 場景名稱
 			repeat_times (int): 重複執行次數
 		"""
+		class_id = request.class_id
+		repeat_times = request.repeat_times
+		x = request.x
+		y = request.y
+		z = request.z
+		# 取得從客戶端送來的 X、Y、Z
+		self.get_logger().info(f"接收到 x={x}, y={y}, z={z}")
+
+		trashCan_position = [
+			[0., 0., 0., 0., 0., 0.],
+			[0., 0., 0., 0., 0., 0.],
+			[0., 0., 0., 0., 0., 0.],
+		]
 		try:
-			with zmq_ai_srv_clt() as client:
-				for i in range(repeat_times):
+			for i in range(repeat_times):
+				# 先移動到拍照位置
+				self.call_tm12_set_positions(
+				positions=self.pose_take_photo_static_
+				)
+				self.wait_for_tm12_arrive(self.pose_take_photo_static_)
+				time.sleep(0.5)
 
-					# 先移動到拍照位置
-					self.call_tm12_set_positions(
-					positions=self.pose_take_photo_static_
-					)
-					self.wait_for_tm12_arrive(self.pose_take_photo_static_)
-					time.sleep(0.5)
+				# 取得當前機器人位置的變換矩陣
+				T_Grpr2Base = self.get_transform_from_tm12_cartesian_pose(
+				self.tm12_feedback_.tool_pose
+				)
 
-					# 取得當前機器人位置的變換矩陣
-					T_Grpr2Base = self.get_transform_from_tm12_cartesian_pose(
-					self.tm12_feedback_.tool_pose
-					)
+				# 透過自訂演算法獲取物體相對於相機的位姿
+				'''response = self.get_object_pose(
+				self.rgb_img_, self.depth_img_, self.camera_matrix_, self.dist_coeffs_
+				)'''
+				coor = [x, y, z, 0., 0., 0.]
+				#coor = [0., 0., 0.4, 0., 0., 0.]
 
-					# 檢查所需資料是否都準備好
-					if any(x is None for x in [self.rgb_img_, self.depth_img_, self.camera_matrix_]):
-						raise ValueError("缺少必要的影像或相機參數")
+				# 檢查所需資料是否都準備好
+				#if any(x is None for x in [self.rgb_img_, self.depth_img_, self.camera_matrix_]):
+				#	raise ValueError("缺少必要的影像或相機參數")
 
-					# 發送資料給 AI 服務並取得物體位姿
-					response = client.run(
-					self.rgb_img_,
-					self.depth_img_,
-					self.camera_matrix_,
-					self.dist_coeffs_
-					)
-					time.sleep(0.5)
+				# response 推薦在相機座標下
 
-					if response is None:
-						raise ValueError("AI 服務未返回有效結果")
-					self.get_logger().info(f'AI 服務返回結果: {response}')
+				# T_obj2cam 2 T_obj2base
+				# T_Obj2Cam = self.get_transform_from_tm12_cartesian_pose([0., 0., 0.4, 0., 0., 0.])
+				T_Obj2Cam = self.get_transform_from_tm12_cartesian_pose(coor)
+				T_Obj2Base = self.get_transform_Obj2Base(T_Grpr2Base, T_Obj2Cam)
+				pose_obj2base = self.get_tm12_cartesian_pose_from_matrix(T_Obj2Base)
 
-					# response 推薦在相機座標下
+				self.get_logger().info(f'物體位姿: \n{pose_obj2base}')
+				#self.get_logger().info(f'T_Obj2Cam: \n{T_Obj2Cam}')
+				#self.get_logger().info(f'T_Grpr2Base: \n{T_Grpr2Base}')
+				#self.get_logger().info(f'T_Obj2Base: \n{T_Obj2Base}')
 
-					# T_obj2cam 2 T_obj2base
-					T_Obj2Cam = self.get_transform_from_tm12_cartesian_pose(response)
-					T_Obj2Base = self.get_transform_Obj2Base(T_Grpr2Base, T_Obj2Cam)
-					pose_obj2base = self.get_tm12_cartesian_pose_from_matrix(T_Obj2Base)
+				#T_test = self.get_transform_from_tm12_cartesian_pose([0.3571, -0.5795, 0.2, -3.1415, 0., 0.7854])
+				#self.get_logger().info(f'Test: \n{T_test}')
+				#original
+				ret = self.pick_at(pose_obj2base, 1)# [0.3571, -0.5795, 0.2, -3.1415, 0., 0.7854]
+				if ret == False:
+					response.success = False
+					response.message = "Error: 未成功抓取"
+					self.get_logger().error('AI 動作抓取期間發生錯誤: 未成功抓取')
+					return response
+				#self.place_at(trashcan_position[class_id])#  [0.3571, -0.5795, 0.2, -3.1415, 0., 0.7854]
+				self.place_at([0.1, -0.5, 0.1, -3.1415, 0., 0.7854])#  [0.3571, -0.5795, 0.2, -3.1415, 0., 0.7854]
 
-					self.get_logger().info(f'物體位姿: \n{pose_obj2base}')
-					#self.get_logger().info(f'T_Obj2Cam: \n{T_Obj2Cam}')
-					#self.get_logger().info(f'T_Grpr2Base: \n{T_Grpr2Base}')
-					#self.get_logger().info(f'T_Obj2Base: \n{T_Obj2Base}')
+			# 回到安全位置
+			self.homing_execute()
 
-					#T_test = self.get_transform_from_tm12_cartesian_pose([0.3571, -0.5795, 0.2, -3.1415, 0., 0.7854])
-					#self.get_logger().info(f'Test: \n{T_test}')
-					self.pick_at(pose_obj2base, 1)# [0.3571, -0.5795, 0.2, -3.1415, 0., 0.7854]
-					self.place_at([0.1, -0.5, 0.1, -3.1415, 0., 0.7854])#  [0.3571, -0.5795, 0.2, -3.1415, 0., 0.7854]
-
-				# 回到安全位置
-				self.homing_execute()
-
+			# 如果都成功，可在 response 中標記
+			response.success = True
+			response.message = "AI 動作執行完成"
 		except Exception as e:
 			self.get_logger().error(f'AI 動作執行期間發生錯誤: {e}')
+			response.success = False
+			response.message = f"Error: {str(e)}"
 			raise
+		self.get_logger().info('成功執行Service: ai_action')
+		return response
+
+
 
 ####################################################
 
@@ -860,7 +884,7 @@ class TM12_AMM_ROS2_Node(Node):
 
 			# 1. 開啟夾爪並確認
 			self.call_grpr2f85_set_gripper_state(position=0)
-
+			
 			# 2. 移動到預抓取位置
 			self.call_tm12_set_positions(positions=pre_grasp_pose)
 
@@ -870,10 +894,18 @@ class TM12_AMM_ROS2_Node(Node):
 			self.wait_for_tm12_arrive(target_pose)
 
 			self.get_logger().info('機器人已到達目標位置')
-			self.call_grpr2f85_set_gripper_state(position=int(openning * 255 + 0.5), wait_time=0)
-
-			# 5. 提起物體回到預抓取位置
-			self.call_tm12_set_positions(positions=pre_grasp_pose)
+			grpr_result = self.call_grpr2f85_set_gripper_state(position=int(openning * 255 + 0.5), wait_time=0)
+			if grpr_result.status_code == 2: # 成功抓取
+				self.get_logger().info('成功抓取')
+				# 5. 提起物體回到預抓取位置
+				self.call_tm12_set_positions(positions=pre_grasp_pose)
+			elif grpr_result.status_code == 3:  # 抓取失敗
+				self.get_logger().error('未抓取到物體')
+				try:
+					self.homing_execute()
+				except Exception as e:
+					self.get_logger().error(f'回原位失敗: {e}')
+				return False
 
 			return True
 
