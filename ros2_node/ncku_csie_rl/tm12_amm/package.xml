@@ -34,6 +34,12 @@
   <depend>tm_msgs</depend>
   <depend>realsense2_camera_msgs</depend>
   <depend>tm12_amm_interfaces</depend>
+  
+  <build_depend>rosidl_default_generators</build_depend>
+  <exec_depend>rosidl_default_generators</exec_depend>
+  
+  <exec_depend>rosidl_default_runtime</exec_depend>
+
 
   <exec_depend>python3-yaml</exec_depend>
 
